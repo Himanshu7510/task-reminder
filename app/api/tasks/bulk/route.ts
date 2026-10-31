@@ -30,6 +30,7 @@ export async function POST(req: Request) {
         type: (pick("type", "category") || "task").toLowerCase().startsWith("cert") ? "certificate" : "task",
         assignees: pick("assignees", "assignee", "email", "emails", "assignto", "assigneeemail"),
         startDate: pick("duedate", "date", "expirydate", "expiry", "startdate", "due"),
+        dueTime: pick("duetime", "time", "remindertime", "remindat"),
         recurrence: (pick("repeat", "recurrence", "frequency") || "none").toLowerCase(),
         reminders: pick("reminders", "reminderdays", "remindbefore", "daysbefore"),
         description: pick("description", "notes", "details") || "",

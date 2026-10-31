@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { readDB, updateDB } from "@/lib/db";
 import { verifyLink } from "@/lib/tokens";
 import { recordSeen } from "@/lib/completion";
-import { prettyDate } from "@/lib/dates";
+import { prettyDate, prettyTime } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Confirm completion — Reminder Desk", robots: { index: false, follow: false } };
@@ -49,7 +49,7 @@ export default async function DonePage({ searchParams }: { searchParams: SP }) {
     <Shell>
       <div className="done-meta">
         <span className={`type ${task.type}`}>{isCert ? "Certificate" : "Task"}</span>
-        <span className="muted">{isCert ? "Expiry" : "Due"} {prettyDate(p.o)}</span>
+        <span className="muted">{isCert ? "Expiry" : "Due"} {prettyDate(p.o)}, {prettyTime(task.dueTime)} IST</span>
       </div>
       <h1>{task.title}</h1>
       {task.reference && <p className="muted">#{task.reference}</p>}

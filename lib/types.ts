@@ -18,6 +18,8 @@ export interface Task {
   assignees: string[]; // emails
   /** First due date (or expiry date for a certificate), YYYY-MM-DD */
   startDate: string;
+  /** Due time HH:MM (24h, app time zone). Reminders are sent at this time. Default 09:00 */
+  dueTime?: string;
   recurrence: Recurrence;
   /** Days before the due date to send a reminder, e.g. [30, 7, 1, 0] */
   reminders: number[];

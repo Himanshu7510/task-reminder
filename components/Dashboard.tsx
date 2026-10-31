@@ -30,6 +30,13 @@ function daysBetween(a: string, b: string) {
 function fmtDate(d: string) {
   return new Date(d + "T00:00:00Z").toLocaleDateString("en-IN", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
 }
+function fmtTime(t?: string) {
+  const [h, m] = (t || "09:00").split(":").map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
+function nowHHMM() {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
+}
 function offsetLabel(o: number) {
   return o === 0 ? "On the day" : o === 1 ? "1 day before" : `${o} days before`;
 }
@@ -69,11 +76,11 @@ function parseCSV(text: string): Record<string, string>[] {
   return rows.slice(1).map((r) => Object.fromEntries(head.map((h, i) => [h, (r[i] ?? "").trim()])));
 }
 const TEMPLATE =
-  "title,type,assignees,due_date,repeat,reminders,reference,description\n" +
-  'Fire safety certificate,certificate,ops@example.com,2027-03-31,yearly,,FS-2291,Renew with municipal fire dept (blank reminders = 2 days before + 1 day before + on the day)\n' +
-  'GST return filing,task,"accounts@example.com;ca@example.com",2026-11-20,monthly,"5;1;0",,File GSTR-3B\n' +
-  "Daily site inspection,task,supervisor@example.com,2026-11-01,daily,0,,Upload photos to the group\n" +
-  "ISO 9001 audit,certificate,quality@example.com,15/06/2027,none,\"90;30;7\",ISO-9001-445,Book auditor early\n";
+  "title,type,assignees,due_date,due_time,repeat,reminders,reference,description\n" +
+  'Fire safety certificate,certificate,ops@example.com,2027-03-31,10:00,yearly,,FS-2291,Renew with municipal fire dept (blank reminders = 2 days before + 1 day before + on the day)\n' +
+  'GST return filing,task,"accounts@example.com;ca@example.com",2026-11-20,5:30 PM,monthly,,,File GSTR-3B\n' +
+  "Daily site inspection,task,supervisor@example.com,2026-11-01,08:30,daily,0,,Upload photos to the group\n" +
+  "ISO 9001 audit,certificate,quality@example.com,15/06/2027,,none,\"90;30;7\",ISO-9001-445,Book auditor early (blank time = 9:00 AM)\n";
 
 /* ---------- Component ---------- */
 export default function Dashboard() {
@@ -245,6 +252,7 @@ function Items({ data, onEdit, reload, flash }: { data: Data; onEdit: (t: TaskVi
                   {t.next ? (
                     <>
                       <div className="due-d">{fmtDate(t.next.date)}</div>
+                      <div className="due-t">{fmtTime(t.dueTime)}</div>
                       <div className="due-r">{d! < 0 ? `${-d!}d overdue` : d === 0 ? "Today" : d === 1 ? "Tomorrow" : `in ${d} days`}</div>
                     </>
                   ) : <div className="due-r">✓ Completed</div>}
@@ -310,6 +318,7 @@ function Editor({ task, people, today, onClose, onSaved, flash }: {
     description: task?.description ?? "",
     assignees: task?.assignees ?? [] as string[],
     startDate: task?.startDate ?? today,
+    dueTime: task?.dueTime ?? "09:00",
     recurrence: task?.recurrence ?? ("none" as Recurrence),
     reminders: task?.reminders ?? [2, 1, 0],
     overdueDaily: task?.overdueDaily ?? true,
@@ -368,7 +377,7 @@ function Editor({ task, people, today, onClose, onSaved, flash }: {
   }
 
   const isCert = f.type === "certificate";
-  const preview = previewSchedule(f.startDate, f.recurrence, f.reminders, today);
+  const preview = previewSchedule(f.startDate, f.recurrence, f.reminders, today, f.dueTime, nowHHMM());
 
   return (
     <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -386,9 +395,12 @@ function Editor({ task, people, today, onClose, onSaved, flash }: {
         <label>{isCert ? "Certificate name" : "Task title"} *
           <input value={f.title} onChange={(e) => set("title", e.target.value)} required placeholder={isCert ? "e.g. Fire safety NOC" : "e.g. Submit monthly GST return"} />
         </label>
-        <div className="grid2">
+        <div className="grid3">
           <label>{isCert ? "Expiry / renewal date" : "Due date"} *
             <input type="date" value={f.startDate} onChange={(e) => set("startDate", e.target.value)} required />
+          </label>
+          <label>Time (IST) *
+            <input type="time" value={f.dueTime} onChange={(e) => set("dueTime", e.target.value)} required step={300} />
           </label>
           <label>Repeats
             <select value={f.recurrence} onChange={(e) => setRec(e.target.value as Recurrence)}>
@@ -420,7 +432,7 @@ function Editor({ task, people, today, onClose, onSaved, flash }: {
         {f.recurrence === "none" && (
           <label className="check"><input type="checkbox" checked={f.overdueDaily} onChange={(e) => set("overdueDaily", e.target.checked)} /> Keep emailing daily after the date until marked done</label>
         )}
-        {preview.length > 0 && <div className="preview"><b>Next emails:</b> {preview.map((p) => fmtDate(p)).join(" · ")}</div>}
+        {preview.length > 0 && <div className="preview"><b>Next emails at {fmtTime(f.dueTime)} IST:</b> {preview.map((p) => fmtDate(p)).join(" · ")}</div>}
 
         {isCert && (
           <label>Certificate no. / reference
@@ -458,7 +470,7 @@ function addM(d: string, n: number) {
   return new Date(Date.UTC(y, m - 1 + n, Math.min(day, last))).toISOString().slice(0, 10);
 }
 function addD(d: string, n: number) { return new Date(Date.parse(d + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10); }
-function previewSchedule(start: string, r: Recurrence, offsets: number[], today: string): string[] {
+function previewSchedule(start: string, r: Recurrence, offsets: number[], today: string, time = "09:00", now = "00:00"): string[] {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return [];
   const occ: string[] = [];
   for (let k = 0; occ.length < 4 && k < 2000; k++) {
@@ -466,7 +478,7 @@ function previewSchedule(start: string, r: Recurrence, offsets: number[], today:
     if (d >= today) occ.push(d);
     if (r === "none") break;
   }
-  const sends = occ.flatMap((o) => offsets.map((x) => addD(o, -x))).filter((d) => d >= today);
+  const sends = occ.flatMap((o) => offsets.map((x) => addD(o, -x))).filter((d) => d > today || (d === today && time > now));
   return [...new Set(sends)].sort().slice(0, 5);
 }
 
@@ -511,7 +523,7 @@ function Bulk({ reload, flash, done }: { reload: () => void; flash: (m: string, 
       <div className="bulk-head">
         <div>
           <h3>Upload many tasks &amp; certificates at once</h3>
-          <p className="muted">One row per item. Columns: <code>title</code>, <code>type</code> (task / certificate), <code>assignees</code> (separate several emails with <code>;</code>), <code>due_date</code> (YYYY-MM-DD or DD/MM/YYYY), <code>repeat</code> (none, daily, weekly, monthly, quarterly, yearly), <code>reminders</code> (days before, e.g. <code>30;7;1;0</code> — leave blank for the default 3 reminders: 2 days before, 1 day before, on the day), <code>reference</code>, <code>description</code>.</p>
+          <p className="muted">One row per item. Columns: <code>title</code>, <code>type</code> (task / certificate), <code>assignees</code> (separate several emails with <code>;</code>), <code>due_date</code> (YYYY-MM-DD or DD/MM/YYYY), <code>due_time</code> (e.g. <code>17:30</code> or <code>5:30 PM</code>, IST — blank = 9:00 AM), <code>repeat</code> (none, daily, weekly, monthly, quarterly, yearly), <code>reminders</code> (days before, e.g. <code>30;7;1;0</code> — leave blank for the default 3 reminders: 2 days before, 1 day before, on the day), <code>reference</code>, <code>description</code>.</p>
         </div>
         <button className="btn" onClick={template}>⬇ Download template</button>
       </div>
@@ -668,7 +680,7 @@ function Settings({ data, flash, reload }: { data: Data; flash: (m: string, b?: 
       <ChangePassword flash={flash} adminEmail={data.email.admin} />
       <div className="card">
         <h3>Schedule</h3>
-        <p>Reminders are checked automatically <b>every day at 9:00 AM IST</b> ({data.tz}). Each item emails its assignees on each reminder day you picked (e.g. 30, 7 and 1 days before), and daily items email every day.</p>
+        <p>Each item emails its assignees <b>at its due time</b> (IST) on each reminder day you picked — by default 2 days before, 1 day before and on the due date. Reminders are checked <b>every 10 minutes</b>, so an email arrives within about 10–15 minutes of the set time. A daily digest goes out at 9:00 AM.</p>
         <p className="muted">Daily cron secret: {data.cron ? "set ✓" : "not set — Vercel cron calls will be rejected"} · Storage: {data.storage === "blob" ? "Vercel Blob ✓" : "local file (dev only)"}</p>
         {data.email.admin ? <p className="muted">A daily digest goes to {data.email.admin}.</p> : <p className="muted">Set <code>ADMIN_EMAIL</code> to receive a daily digest.</p>}
       </div>

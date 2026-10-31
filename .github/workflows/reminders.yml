@@ -1,0 +1,28 @@
+name: Send due reminders
+
+# Vercel's free plan only runs its own cron once a day, so this checks every 10 minutes
+# and sends reminders at each task's due time (IST). The endpoint only sends what is due.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send reminders that are due now
+        run: |
+          code=$(curl -sS -o resp.txt -w "%{http_code}" --retry 3 --retry-delay 10 --max-time 120 \
+            -H "User-Agent: reminder-desk-scheduler" "${APP_URL}/api/tick" || echo "000")
+          echo "HTTP $code"; head -c 500 resp.txt 2>/dev/null; echo
+          if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+            echo "::warning::The site is behind Vercel Authentication. In Vercel → task-reminder → Settings → Deployment Protection, set Vercel Authentication to 'Only Preview Deployments'."
+          elif [ "$code" != "200" ]; then
+            echo "::warning::Reminder check returned HTTP $code"
+          fi
+        env:
+          APP_URL: https://task-reminder-jet.vercel.app

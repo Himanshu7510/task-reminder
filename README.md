@@ -12,7 +12,7 @@ Assign tasks and certificates to people by email and let the app remind them aut
 - **Bulk upload** — import hundreds of items from a CSV (template included; Excel → Save As CSV).
 - **Email now**, **mark done** (recurring items roll to the next occurrence), pause/resume.
 - **Daily digest** to the admin, plus an email activity log.
-- Runs daily at **9:00 AM IST** via Vercel Cron (`vercel.json`).
+- **Due date + time** — reminders go out at each item's time (IST). GitHub Actions (`.github/workflows/reminders.yml`) calls `/api/tick` every 10 minutes; Vercel Cron runs once a day at 9:00 AM IST for the admin digest and as a backup. Missed runs are caught up the next day.
 
 ## Admin password & security
 - **Forgot password** on the sign-in page emails a one-time reset link to `ADMIN_EMAIL` (expires in 30 min, single use, only the token's SHA-256 is stored; max 1 request per 2 min).

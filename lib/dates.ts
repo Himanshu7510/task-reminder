@@ -81,3 +81,16 @@ export function upcoming(task: Pick<Task, "startDate" | "recurrence">, n = 3, re
 export function prettyDate(d: string): string {
   return parse(d).toLocaleDateString("en-IN", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric", weekday: "short" });
 }
+
+export const DEFAULT_TIME = "09:00";
+
+/** Current time in the app time zone as HH:MM (24h) */
+export function nowTime(tz = TZ): string {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
+}
+
+/** "17:30" → "5:30 PM" */
+export function prettyTime(t?: string): string {
+  const [h, m] = (t || DEFAULT_TIME).split(":").map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
