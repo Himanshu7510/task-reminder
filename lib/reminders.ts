@@ -48,14 +48,16 @@ export function buildReminder(t: Task, occurrence: string, ref = today(), kind: 
   const label = isCert ? "Certificate" : "Task";
   const heading =
     kind === "assigned" ? `New ${label.toLowerCase()} assigned: ${esc(t.title)}` : `${esc(t.title)} ${whenText(days, t.type, timeOf(t))}`;
-  const dueAt = `${prettyDate(occurrence)}, ${prettyTime(timeOf(t))}`;
+  const dueAt = `${prettyDate(occurrence)} at ${prettyTime(timeOf(t))}`;
+  const left = days < 0 ? `${-days} day${days === -1 ? "" : "s"} overdue` : days === 0 ? "Due today" : days === 1 ? "1 day (tomorrow)" : `${days} days`;
   const subject =
     kind === "assigned"
       ? `[Assigned] ${t.title} — ${isCert ? "expires" : "due"} ${dueAt}`
-      : `${days < 0 ? "[OVERDUE] " : "[Reminder] "}${t.title} ${whenText(days, t.type, timeOf(t))} (${dueAt})`;
+      : `${days < 0 ? "[OVERDUE] " : "[Reminder] "}${t.title} ${whenText(days, t.type)} — ${dueAt}`;
   const rows: [string, string][] = [
     ["Type", label],
     [isCert ? "Expiry" : "Due", esc(dueAt) + " IST"],
+    [days < 0 ? "Status" : "Time left", left],
     ["Repeats", REC_LABEL[t.recurrence]],
     ["Assigned to", esc(t.assignees.join(", "))],
   ];
@@ -196,7 +198,7 @@ async function sendDigest(db: DB, ref: string) {
     `<b>Reminders sent</b>` +
     list(sent.map((d) => `<li>${esc(d.title)} → ${esc(d.to.join(", "))} ${d.ok ? "" : `<span style="color:#dc2626">(failed: ${esc(d.error || "")})</span>`}</li>`)) +
     `<b>Overdue</b>` +
-    list(overdue.map(({ t, n }) => `<li>${esc(t.title)} — ${esc(prettyDate(n!.date))}, ${prettyTime(timeOf(t))} (${esc(t.assignees.join(", "))})</li>`));
+    list(overdue.map(({ t, n }) => `<li>${esc(t.title)} — ${esc(prettyDate(n!.date))} at ${prettyTime(timeOf(t))} (${esc(t.assignees.join(", "))})</li>`));
   try {
     await sendMail({ to: [admin], subject: `Daily reminder digest — ${prettyDate(ref)}`, html: layout("Daily digest", "#111827", rows, body), text: `Sent ${sent.length}, completed ${done.length}, overdue ${overdue.length}` });
     db.log.push({ at: new Date().toISOString(), title: "Daily digest", to: [admin], kind: "digest", ok: true });

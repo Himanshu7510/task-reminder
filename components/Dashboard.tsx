@@ -27,8 +27,18 @@ const PRESETS = [0, 1, 3, 7, 15, 30, 60, 90];
 function daysBetween(a: string, b: string) {
   return Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / 86400000);
 }
+/** "Mon, 2 Nov 2026" */
 function fmtDate(d: string) {
-  return new Date(d + "T00:00:00Z").toLocaleDateString("en-IN", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
+  return new Date(d + "T00:00:00Z").toLocaleDateString("en-IN", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
+/** "Monday, 2 November 2026" */
+function fmtLong(d: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "";
+  return new Date(d + "T00:00:00Z").toLocaleDateString("en-IN", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+/** "Monday" */
+function fmtDay(d: string) {
+  return new Date(d + "T00:00:00Z").toLocaleDateString("en-IN", { timeZone: "UTC", weekday: "long" });
 }
 function fmtTime(t?: string) {
   const [h, m] = (t || "09:00").split(":").map(Number);
@@ -253,7 +263,7 @@ function Items({ data, onEdit, reload, flash }: { data: Data; onEdit: (t: TaskVi
                     <>
                       <div className="due-d">{fmtDate(t.next.date)}</div>
                       <div className="due-t">{fmtTime(t.dueTime)}</div>
-                      <div className="due-r">{d! < 0 ? `${-d!}d overdue` : d === 0 ? "Today" : d === 1 ? "Tomorrow" : `in ${d} days`}</div>
+                      <div className="due-r">{d! < 0 ? `${-d!} day${d === -1 ? "" : "s"} overdue` : d === 0 ? `Today (${fmtDay(t.next.date)})` : d === 1 ? `Tomorrow (${fmtDay(t.next.date)})` : `${fmtDay(t.next.date)} · in ${d} days`}</div>
                     </>
                   ) : <div className="due-r">✓ Completed</div>}
                 </div>
@@ -303,6 +313,30 @@ function Tracking({ t }: { t: TaskView }) {
           ✓ {fmtDate(last.occ)} completed by {last.email === "admin" ? "admin" : last.email.split("@")[0]} {last.via === "email" ? "via email" : "on dashboard"} · {time(last.at)}
         </span>
       )}
+    </div>
+  );
+}
+
+/* ---------- 12-hour time picker with AM / PM ---------- */
+function TimePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [H, M] = (value || "09:00").split(":").map(Number);
+  const pm = H >= 12;
+  const h12 = H % 12 || 12;
+  const emit = (h: number, m: number, isPm: boolean) => onChange(`${String((h % 12) + (isPm ? 12 : 0)).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+  const mins = [...new Set([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, M])].sort((a, b) => a - b);
+  return (
+    <div className="timepicker">
+      <select aria-label="Hour" value={h12} onChange={(e) => emit(+e.target.value, M, pm)}>
+        {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((h) => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <span className="tp-colon">:</span>
+      <select aria-label="Minute" value={M} onChange={(e) => emit(h12, +e.target.value, pm)}>
+        {mins.map((m) => <option key={m} value={m}>{String(m).padStart(2, "0")}</option>)}
+      </select>
+      <div className="ampm" role="group" aria-label="AM or PM">
+        <button type="button" className={!pm ? "on" : ""} onClick={() => emit(h12, M, false)}>AM</button>
+        <button type="button" className={pm ? "on" : ""} onClick={() => emit(h12, M, true)}>PM</button>
+      </div>
     </div>
   );
 }
@@ -399,15 +433,22 @@ function Editor({ task, people, today, onClose, onSaved, flash }: {
           <label>{isCert ? "Expiry / renewal date" : "Due date"} *
             <input type="date" value={f.startDate} onChange={(e) => set("startDate", e.target.value)} required />
           </label>
-          <label>Time (IST) *
-            <input type="time" value={f.dueTime} onChange={(e) => set("dueTime", e.target.value)} required step={300} />
-          </label>
+          <div>
+            <label>Time (IST) *</label>
+            <TimePicker value={f.dueTime} onChange={(v) => set("dueTime", v)} />
+          </div>
           <label>Repeats
             <select value={f.recurrence} onChange={(e) => setRec(e.target.value as Recurrence)}>
               {REC.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
             </select>
           </label>
         </div>
+
+        {fmtLong(f.startDate) && (
+          <div className="when-hint">📅 {isCert ? "Expires" : "Due"} <b>{fmtLong(f.startDate)}</b> at <b>{fmtTime(f.dueTime)}</b> IST
+            {f.recurrence !== "none" && <> · repeats {REC.find((r) => r.v === f.recurrence)?.l.toLowerCase()}{f.recurrence === "weekly" ? ` (every ${fmtDay(f.startDate)})` : ""}</>}
+          </div>
+        )}
 
         <label>Assign to (emails) *</label>
         <div className="chips-input">
@@ -422,7 +463,10 @@ function Editor({ task, people, today, onClose, onSaved, flash }: {
         <label>Email reminders</label>
         <div className="offsets">
           {[...new Set([...PRESETS, ...f.reminders])].sort((a, b) => a - b).map((o) => (
-            <button type="button" key={o} className={f.reminders.includes(o) ? "on" : ""} onClick={() => toggleOffset(o)}>{offsetLabel(o)}</button>
+            <button type="button" key={o} className={f.reminders.includes(o) ? "on" : ""} onClick={() => toggleOffset(o)}
+              title={fmtLong(f.startDate) ? `${fmtLong(addD(f.startDate, -o))} at ${fmtTime(f.dueTime)}` : ""}>
+              {offsetLabel(o)}{fmtLong(f.startDate) && f.reminders.includes(o) ? <span className="chip-day"> · {fmtDate(addD(f.startDate, -o)).replace(/ \d{4}$/, "")}</span> : null}
+            </button>
           ))}
           <span className="custom">
             <input type="number" min={0} max={366} value={custom} placeholder="Custom" onChange={(e) => setCustom(e.target.value)} />
@@ -432,7 +476,11 @@ function Editor({ task, people, today, onClose, onSaved, flash }: {
         {f.recurrence === "none" && (
           <label className="check"><input type="checkbox" checked={f.overdueDaily} onChange={(e) => set("overdueDaily", e.target.checked)} /> Keep emailing daily after the date until marked done</label>
         )}
-        {preview.length > 0 && <div className="preview"><b>Next emails at {fmtTime(f.dueTime)} IST:</b> {preview.map((p) => fmtDate(p)).join(" · ")}</div>}
+        {preview.length > 0 && (
+          <div className="preview"><b>Next reminder emails:</b>
+            <ul>{preview.map((p) => <li key={p}>{fmtLong(p)} · <b>{fmtTime(f.dueTime)}</b> IST</li>)}</ul>
+          </div>
+        )}
 
         {isCert && (
           <label>Certificate no. / reference

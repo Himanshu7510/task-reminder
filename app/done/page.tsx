@@ -49,7 +49,7 @@ export default async function DonePage({ searchParams }: { searchParams: SP }) {
     <Shell>
       <div className="done-meta">
         <span className={`type ${task.type}`}>{isCert ? "Certificate" : "Task"}</span>
-        <span className="muted">{isCert ? "Expiry" : "Due"} {prettyDate(p.o)}, {prettyTime(task.dueTime)} IST</span>
+        <span className="muted">{isCert ? "Expiry" : "Due"} {prettyDate(p.o)} at {prettyTime(task.dueTime)} IST</span>
       </div>
       <h1>{task.title}</h1>
       {task.reference && <p className="muted">#{task.reference}</p>}

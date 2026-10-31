@@ -78,8 +78,12 @@ export function upcoming(task: Pick<Task, "startDate" | "recurrence">, n = 3, re
   return out;
 }
 
+/** "Monday, 2 Nov 2026" */
 export function prettyDate(d: string): string {
-  return parse(d).toLocaleDateString("en-IN", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric", weekday: "short" });
+  const x = parse(d);
+  const day = x.toLocaleDateString("en-IN", { timeZone: "UTC", weekday: "long" });
+  const rest = x.toLocaleDateString("en-IN", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
+  return `${day}, ${rest}`;
 }
 
 export const DEFAULT_TIME = "09:00";
