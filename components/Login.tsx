@@ -32,7 +32,7 @@ export default function Login({ resetToken }: { resetToken?: string }) {
     const r = await post("/api/auth", { password: pw });
     setBusy(false);
     if (r.ok) location.replace("/");
-    else { setErr(r.error || "Sign-in failed"); setPw(""); }
+    else { setErr(r.error || "Something went wrong on the server. Please try again in a moment."); setPw(""); }
   }
 
   async function forgot(e: React.FormEvent) {

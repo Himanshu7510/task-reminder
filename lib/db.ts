@@ -1,4 +1,4 @@
-import { get, put, BlobPreconditionFailedError, BlobNotFoundError } from "@vercel/blob";
+import { get, head, put, BlobPreconditionFailedError, BlobNotFoundError } from "@vercel/blob";
 import { promises as fs } from "fs";
 import path from "path";
 import type { DB } from "./types";
@@ -22,10 +22,14 @@ async function load(): Promise<{ db: DB; etag?: string }> {
     }
   }
   try {
+    // Take the version tag from the Blob API (head) — the same format put({ ifMatch }) compares against.
+    // The download response's HTTP ETag header is formatted differently and never matches.
+    // head() runs first, so if someone writes between head and get, our save is rejected and retried.
+    const meta = await head(DB_PATH);
     const res = await get(DB_PATH, { access: "private", useCache: false });
     if (!res || res.statusCode !== 200) return { db: empty() };
     const text = await readStream(res.stream);
-    return { db: { ...empty(), ...JSON.parse(text) }, etag: res.blob.etag };
+    return { db: { ...empty(), ...JSON.parse(text) }, etag: meta.etag };
   } catch (e) {
     if (e instanceof BlobNotFoundError) return { db: empty() };
     throw e;
@@ -55,17 +59,24 @@ export async function readDB(): Promise<DB> {
 
 /** Read-modify-write with optimistic concurrency (retries if someone else wrote in between). */
 export async function updateDB<T>(fn: (db: DB) => T | Promise<T>): Promise<T> {
-  for (let attempt = 0; attempt < 5; attempt++) {
+  const ATTEMPTS = 5;
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     const { db, etag } = await load();
     const result = await fn(db);
     db.log = db.log.slice(-500);
+    // Last attempt writes unconditionally so a version-tag problem can never lock the app up again.
+    const last = attempt === ATTEMPTS - 1;
     try {
-      await save(db, etag);
+      await save(db, last ? undefined : etag);
       return result;
     } catch (e) {
-      if (e instanceof BlobPreconditionFailedError) continue;
+      if (e instanceof BlobPreconditionFailedError && !last) {
+        console.warn(`updateDB: version conflict, retrying (${attempt + 1}/${ATTEMPTS})`);
+        await new Promise((r) => setTimeout(r, 100 + Math.random() * 200));
+        continue;
+      }
       throw e;
     }
   }
-  throw new Error("Could not save — too many concurrent edits, please retry.");
+  throw new Error("Could not save, please retry.");
 }
