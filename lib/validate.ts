@@ -10,12 +10,15 @@ export function parseEmails(v: unknown): string[] {
   return [...new Set(arr.map((e) => String(e).trim().toLowerCase()).filter(Boolean))];
 }
 
+/** Every task gets 3 reminders by default: 2 days before, 1 day before and on the due date. */
+export const DEFAULT_REMINDERS = [2, 1, 0];
+
 export function parseOffsets(v: unknown, rec: Recurrence): number[] {
   const arr = Array.isArray(v) ? v : String(v ?? "").split(/[,;\s|]+/);
   const nums = arr.map((x) => parseInt(String(x), 10)).filter((n) => Number.isFinite(n) && n >= 0 && n <= 366);
   const list = [...new Set(nums)].sort((a, b) => b - a);
   if (list.length) return list;
-  return rec === "daily" ? [0] : rec === "weekly" ? [1, 0] : rec === "monthly" || rec === "quarterly" ? [7, 1, 0] : rec === "yearly" ? [30, 7, 1, 0] : [7, 1, 0];
+  return rec === "daily" ? [0] : [...DEFAULT_REMINDERS];
 }
 
 /** Normalise a free-form date: YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY */

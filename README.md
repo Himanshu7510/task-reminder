@@ -5,7 +5,8 @@ Assign tasks and certificates to people by email and let the app remind them aut
 ## Features
 - **Tasks and certificates** — certificates have an expiry/renewal date, certificate number and an uploaded copy (PDF/image).
 - **Repeat schedules** — one-time, daily, weekly, monthly, quarterly, yearly (31st-of-month and 29-Feb handled).
-- **Multiple reminders per item** — e.g. 60, 30, 7 and 1 day before and on the day; any custom number of days.
+- **3 reminders by default** — 2 days before, 1 day before and on the due date (change per item; any number of days).
+- **Seen + Mark as complete** — each assignee gets their own email with a signed "Mark as complete" button and open tracking; the dashboard shows who opened it and who completed it (via email or dashboard). Completing stops further reminders for that date; recurring items move to the next date.
 - **Assign by email** — several assignees per item; optional "you've been assigned" email; people directory.
 - **Overdue follow-up** — one-time items keep emailing daily until marked done (optional).
 - **Bulk upload** — import hundreds of items from a CSV (template included; Excel → Save As CSV).

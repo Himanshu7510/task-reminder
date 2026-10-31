@@ -29,6 +29,10 @@ export interface Task {
   /** Dedup keys of reminders already sent: `${occurrence}:${offset}` */
   sent: string[];
   attachments: Attachment[];
+  /** Who opened the reminder email, per occurrence */
+  seen?: { occ: string; email: string; at: string }[];
+  /** Who completed which occurrence, and how */
+  completions?: { occ: string; email: string; at: string; via: "email" | "dashboard" }[];
   createdAt: string;
   updatedAt: string;
 }
@@ -43,7 +47,7 @@ export interface LogEntry {
   taskId?: string;
   title: string;
   to: string[];
-  kind: "reminder" | "overdue" | "manual" | "digest" | "test" | "assigned" | "security";
+  kind: "reminder" | "overdue" | "manual" | "digest" | "test" | "assigned" | "security" | "seen" | "completed";
   ok: boolean;
   error?: string;
 }

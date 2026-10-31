@@ -57,7 +57,17 @@ export function appUrl(): string {
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
-export function layout(heading: string, accent: string, rows: [string, string][], body: string, cta = "Open dashboard"): string {
+export interface LayoutOpts {
+  /** Where the main button goes (default: the dashboard) */
+  ctaHref?: string;
+  ctaColor?: string;
+  /** Small text under the button */
+  ctaNote?: string;
+  /** 1×1 image used to record that the email was opened */
+  pixel?: string;
+}
+
+export function layout(heading: string, accent: string, rows: [string, string][], body: string, cta = "Open dashboard", opts: LayoutOpts = {}): string {
   const r = rows
     .map(([k, v]) => `<tr><td style="padding:6px 0;color:#6b7280;width:130px;vertical-align:top">${esc(k)}</td><td style="padding:6px 0;color:#111827;font-weight:600">${v}</td></tr>`)
     .join("");
@@ -69,9 +79,10 @@ export function layout(heading: string, accent: string, rows: [string, string][]
    <h1 style="margin:6px 0 0;font-size:20px;color:#111827">${heading}</h1></td></tr>
    <tr><td style="padding:12px 28px"><table width="100%" style="font-size:14px">${r}</table></td></tr>
    ${body ? `<tr><td style="padding:4px 28px 8px;font-size:14px;color:#374151;line-height:1.55">${body}</td></tr>` : ""}
-   <tr><td style="padding:16px 28px 28px"><a href="${appUrl()}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:14px">${cta}</a></td></tr>
+   <tr><td style="padding:16px 28px 28px"><a href="${opts.ctaHref ?? appUrl()}" style="display:inline-block;background:${opts.ctaColor ?? "#111827"};color:#fff;text-decoration:none;padding:11px 20px;border-radius:8px;font-size:14px;font-weight:600">${cta}</a>${opts.ctaNote ? `<div style="font-size:12px;color:#71717a;margin-top:10px">${opts.ctaNote}</div>` : ""}</td></tr>
   </table>
   <div style="font-size:12px;color:#a1a1aa;margin-top:12px">You're receiving this because you are assigned to this item.</div>
+  ${opts.pixel ? `<img src="${opts.pixel}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0" />` : ""}
   </td></tr></table></body></html>`;
 }
 

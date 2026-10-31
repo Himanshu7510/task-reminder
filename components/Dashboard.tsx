@@ -70,7 +70,7 @@ function parseCSV(text: string): Record<string, string>[] {
 }
 const TEMPLATE =
   "title,type,assignees,due_date,repeat,reminders,reference,description\n" +
-  'Fire safety certificate,certificate,ops@example.com,2027-03-31,yearly,"60;30;7;1",FS-2291,Renew with municipal fire dept\n' +
+  'Fire safety certificate,certificate,ops@example.com,2027-03-31,yearly,,FS-2291,Renew with municipal fire dept (blank reminders = 2 days before + 1 day before + on the day)\n' +
   'GST return filing,task,"accounts@example.com;ca@example.com",2026-11-20,monthly,"5;1;0",,File GSTR-3B\n' +
   "Daily site inspection,task,supervisor@example.com,2026-11-01,daily,0,,Upload photos to the group\n" +
   "ISO 9001 audit,certificate,quality@example.com,15/06/2027,none,\"90;30;7\",ISO-9001-445,Book auditor early\n";
@@ -239,6 +239,7 @@ function Items({ data, onEdit, reload, flash }: { data: Data; onEdit: (t: TaskVi
                     <span>🔔 {t.reminders.map(offsetLabel).join(" · ")}{t.recurrence === "none" && t.overdueDaily ? " · daily when overdue" : ""}</span>
                     {t.attachments?.length > 0 && <span>📎 {t.attachments.length}</span>}
                   </div>
+                  <Tracking t={t} />
                 </div>
                 <div className={`due ${tone}`}>
                   {t.next ? (
@@ -270,6 +271,34 @@ function Items({ data, onEdit, reload, flash }: { data: Data; onEdit: (t: TaskVi
   );
 }
 
+/* ---------- Seen / completed status per assignee ---------- */
+function Tracking({ t }: { t: TaskView }) {
+  const time = (iso: string) => new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+  const occ = t.next?.date;
+  const emailedForOcc = !!occ && t.sent.some((k) => k.startsWith(occ + ":"));
+  const seen = (t.seen || []).filter((s) => s.occ === occ);
+  const last = [...(t.completions || [])].sort((a, b) => b.at.localeCompare(a.at))[0];
+  const showSeen = occ && (emailedForOcc || seen.length > 0);
+  if (!showSeen && !last) return null;
+  return (
+    <div className="tracking">
+      {showSeen && t.assignees.map((e) => {
+        const s = seen.find((x) => x.email === e);
+        return (
+          <span key={e} className={`trk ${s ? "seen" : "unseen"}`} title={s ? `Opened the reminder ${time(s.at)}` : "Hasn't opened the reminder yet"}>
+            {s ? "👁 Seen" : "○ Not opened"} · {e.split("@")[0]}{s ? ` · ${time(s.at)}` : ""}
+          </span>
+        );
+      })}
+      {last && (
+        <span className="trk done" title={`Occurrence ${fmtDate(last.occ)}`}>
+          ✓ {fmtDate(last.occ)} completed by {last.email === "admin" ? "admin" : last.email.split("@")[0]} {last.via === "email" ? "via email" : "on dashboard"} · {time(last.at)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /* ---------- Editor modal ---------- */
 function Editor({ task, people, today, onClose, onSaved, flash }: {
   task: TaskView | null; people: Person[]; today: string; onClose: () => void; onSaved: (m: string) => void; flash: (m: string, b?: boolean) => void;
@@ -282,7 +311,7 @@ function Editor({ task, people, today, onClose, onSaved, flash }: {
     assignees: task?.assignees ?? [] as string[],
     startDate: task?.startDate ?? today,
     recurrence: task?.recurrence ?? ("none" as Recurrence),
-    reminders: task?.reminders ?? [7, 1, 0],
+    reminders: task?.reminders ?? [2, 1, 0],
     overdueDaily: task?.overdueDaily ?? true,
   });
   const [emailInput, setEmailInput] = useState("");
@@ -300,7 +329,7 @@ function Editor({ task, people, today, onClose, onSaved, flash }: {
     setEmailInput("");
   }
   function setRec(r: Recurrence) {
-    const defaults: Record<Recurrence, number[]> = { none: [7, 1, 0], daily: [0], weekly: [1, 0], monthly: [7, 1, 0], quarterly: [15, 7, 1], yearly: [30, 7, 1, 0] };
+    const defaults: Record<Recurrence, number[]> = { none: [2, 1, 0], daily: [0], weekly: [2, 1, 0], monthly: [2, 1, 0], quarterly: [2, 1, 0], yearly: [2, 1, 0] };
     setF((x) => ({ ...x, recurrence: r, reminders: task && task.recurrence === r ? x.reminders : defaults[r] }));
   }
   function toggleOffset(o: number) {
@@ -351,7 +380,7 @@ function Editor({ task, people, today, onClose, onSaved, flash }: {
 
         <div className="seg">
           <button type="button" className={!isCert ? "on" : ""} onClick={() => set("type", "task")}>Task</button>
-          <button type="button" className={isCert ? "on" : ""} onClick={() => setF((x) => ({ ...x, type: "certificate", recurrence: x.recurrence === "none" && !task ? "yearly" : x.recurrence, reminders: !task ? [60, 30, 7, 1] : x.reminders }))}>Certificate</button>
+          <button type="button" className={isCert ? "on" : ""} onClick={() => setF((x) => ({ ...x, type: "certificate", recurrence: x.recurrence === "none" && !task ? "yearly" : x.recurrence, reminders: !task ? [2, 1, 0] : x.reminders }))}>Certificate</button>
         </div>
 
         <label>{isCert ? "Certificate name" : "Task title"} *
@@ -482,7 +511,7 @@ function Bulk({ reload, flash, done }: { reload: () => void; flash: (m: string, 
       <div className="bulk-head">
         <div>
           <h3>Upload many tasks &amp; certificates at once</h3>
-          <p className="muted">One row per item. Columns: <code>title</code>, <code>type</code> (task / certificate), <code>assignees</code> (separate several emails with <code>;</code>), <code>due_date</code> (YYYY-MM-DD or DD/MM/YYYY), <code>repeat</code> (none, daily, weekly, monthly, quarterly, yearly), <code>reminders</code> (days before, e.g. <code>30;7;1;0</code>), <code>reference</code>, <code>description</code>.</p>
+          <p className="muted">One row per item. Columns: <code>title</code>, <code>type</code> (task / certificate), <code>assignees</code> (separate several emails with <code>;</code>), <code>due_date</code> (YYYY-MM-DD or DD/MM/YYYY), <code>repeat</code> (none, daily, weekly, monthly, quarterly, yearly), <code>reminders</code> (days before, e.g. <code>30;7;1;0</code> — leave blank for the default 3 reminders: 2 days before, 1 day before, on the day), <code>reference</code>, <code>description</code>.</p>
         </div>
         <button className="btn" onClick={template}>⬇ Download template</button>
       </div>
@@ -555,7 +584,7 @@ function People({ data, reload, flash }: { data: Data; reload: () => void; flash
 
 /* ---------- Activity ---------- */
 function Activity({ log, lastRun }: { log: LogEntry[]; lastRun: string | null }) {
-  const kinds: Record<string, string> = { reminder: "Reminder", overdue: "Overdue", manual: "Sent manually", digest: "Daily digest", test: "Test", assigned: "Assigned", security: "Security" };
+  const kinds: Record<string, string> = { reminder: "Reminder", overdue: "Overdue", manual: "Sent manually", digest: "Daily digest", test: "Test", assigned: "Assigned", security: "Security", seen: "Email opened", completed: "Completed" };
   return (
     <section className="panel">
       <p className="muted">Last automatic run: {lastRun ? new Date(lastRun).toLocaleString("en-IN") : "not yet"}</p>
@@ -569,7 +598,7 @@ function Activity({ log, lastRun }: { log: LogEntry[]; lastRun: string | null })
                 <td>{l.title}</td>
                 <td>{kinds[l.kind] || l.kind}</td>
                 <td>{l.to.join(", ")}</td>
-                <td>{l.kind === "security" ? (l.ok ? <span className="ok">OK</span> : <span className="bad-t">{l.error}</span>) : l.ok ? <span className="ok">Sent</span> : <span className="bad-t" title={l.error}>Failed — {l.error?.slice(0, 80)}</span>}</td>
+                <td>{l.kind === "seen" ? <span className="ok">Opened</span> : l.kind === "completed" ? <span className="ok">Done {l.error}</span> : l.kind === "security" ? (l.ok ? <span className="ok">OK</span> : <span className="bad-t">{l.error}</span>) : l.ok ? <span className="ok">Sent</span> : <span className="bad-t" title={l.error}>Failed — {l.error?.slice(0, 80)}</span>}</td>
               </tr>
             ))}
             {!log.length && <tr><td colSpan={5} className="muted">No emails sent yet.</td></tr>}

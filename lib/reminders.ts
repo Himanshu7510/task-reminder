@@ -1,5 +1,6 @@
 import { addDays, currentOccurrence, diffDays, prettyDate, today } from "./dates";
-import { esc, layout, sendMail, emailProvider } from "./email";
+import { appUrl, esc, layout, sendMail, emailProvider } from "./email";
+import { signLink } from "./tokens";
 import type { DB, LogEntry, Task } from "./types";
 
 const REC_LABEL: Record<Task["recurrence"], string> = {
@@ -31,7 +32,13 @@ function whenText(days: number, type: Task["type"]) {
   return `${type === "certificate" ? "expired" : "was due"} ${-days} day${days === -1 ? "" : "s"} ago`;
 }
 
-export function buildReminder(t: Task, occurrence: string, ref = today(), kind: LogEntry["kind"] = "reminder") {
+/** Personal links for one assignee: "Mark as complete" page and the open-tracking pixel. */
+export function personalLinks(t: Task, occurrence: string, email: string) {
+  const token = signLink(t.id, email, occurrence);
+  return { done: `${appUrl()}/done?k=${token}`, pixel: `${appUrl()}/api/t/open?k=${token}` };
+}
+
+export function buildReminder(t: Task, occurrence: string, ref = today(), kind: LogEntry["kind"] = "reminder", recipient?: string) {
   const days = diffDays(occurrence, ref);
   const isCert = t.type === "certificate";
   const accent = days < 0 ? "#dc2626" : days <= 1 ? "#ea580c" : days <= 7 ? "#d97706" : "#2563eb";
@@ -51,9 +58,43 @@ export function buildReminder(t: Task, occurrence: string, ref = today(), kind: 
   if (t.reference) rows.push([isCert ? "Certificate no." : "Reference", esc(t.reference)]);
   if (t.attachments?.length) rows.push(["Attachments", esc(t.attachments.map((a) => a.name).join(", "))]);
   const body = t.description ? esc(t.description).replace(/\n/g, "<br>") : "";
-  const html = layout(heading, accent, rows, body);
-  const text = `${heading.replace(/&amp;/g, "&")}\n\n${rows.map(([k, v]) => `${k}: ${v}`).join("\n")}\n\n${t.description || ""}`;
+  if (!recipient) {
+    const html = layout(heading, accent, rows, body);
+    const text = `${heading.replace(/&amp;/g, "&")}\n\n${rows.map(([k, v]) => `${k}: ${v}`).join("\n")}\n\n${t.description || ""}`;
+    return { subject, html, text };
+  }
+  const links = personalLinks(t, occurrence, recipient);
+  const verb = isCert ? "renewed" : "complete";
+  const html = layout(heading, accent, rows, body, isCert ? "✓ Mark as renewed" : "✓ Mark as complete", {
+    ctaHref: links.done,
+    ctaColor: "#16a34a",
+    ctaNote: `Done already? Click the button and confirm — it updates the team dashboard and stops further reminders for this ${isCert ? "renewal" : "due date"}.`,
+    pixel: links.pixel,
+  });
+  const text =
+    `${heading.replace(/&amp;/g, "&")}\n\n${rows.map(([k, v]) => `${k}: ${v.replace(/&amp;/g, "&")}`).join("\n")}\n\n${t.description || ""}\n\n` +
+    `Mark as ${verb}: ${links.done}`;
   return { subject, html, text };
+}
+
+/**
+ * Email every assignee separately (each gets their own "Mark as complete" link and open tracking).
+ * `dedupKey` (optional) skips people who already got this exact reminder.
+ */
+export async function sendToAssignees(t: Task, occurrence: string, ref: string, kind: LogEntry["kind"], dedupKey?: string) {
+  const sentTo: string[] = [], failed: { email: string; error: string }[] = [];
+  for (const email of t.assignees) {
+    const key = dedupKey ? `${dedupKey}:${email}` : "";
+    if (key && t.sent.includes(key)) continue;
+    try {
+      await sendMail({ to: [email], ...buildReminder(t, occurrence, ref, kind, email) });
+      if (key) t.sent.push(key);
+      sentTo.push(email);
+    } catch (e) {
+      failed.push({ email, error: String((e as Error).message) });
+    }
+  }
+  return { sentTo, failed };
 }
 
 export interface RunResult {
@@ -82,32 +123,22 @@ export async function runReminders(db: DB, ref = today()): Promise<RunResult> {
       const occ = addDays(ref, o);
       if (!isOccurrence(t, occ) || t.doneFor.includes(occ)) continue;
       const key = `${occ}:${o}`;
-      if (t.sent.includes(key)) continue;
-      const mail = buildReminder(t, occ, ref);
-      try {
-        await sendMail({ to: t.assignees, ...mail });
-        t.sent.push(key);
-        log({ taskId: t.id, title: t.title, to: t.assignees, kind: "reminder", ok: true });
-      } catch (e) {
-        log({ taskId: t.id, title: t.title, to: t.assignees, kind: "reminder", ok: false, error: String((e as Error).message) });
-      }
+      if (t.sent.includes(key)) continue; // legacy whole-task key
+      const r = await sendToAssignees(t, occ, ref, "reminder", key);
+      if (r.sentTo.length) log({ taskId: t.id, title: t.title, to: r.sentTo, kind: "reminder", ok: true });
+      for (const f of r.failed) log({ taskId: t.id, title: t.title, to: [f.email], kind: "reminder", ok: false, error: f.error });
     }
 
     if (t.recurrence === "none" && t.startDate < ref && !t.doneFor.includes(t.startDate)) {
       overdueList.push({ t, date: t.startDate });
       const key = `${t.startDate}:overdue:${ref}`;
       if (t.overdueDaily && !t.sent.includes(key)) {
-        const mail = buildReminder(t, t.startDate, ref, "overdue");
-        try {
-          await sendMail({ to: t.assignees, ...mail });
-          t.sent.push(key);
-          log({ taskId: t.id, title: t.title, to: t.assignees, kind: "overdue", ok: true });
-        } catch (e) {
-          log({ taskId: t.id, title: t.title, to: t.assignees, kind: "overdue", ok: false, error: String((e as Error).message) });
-        }
+        const r = await sendToAssignees(t, t.startDate, ref, "overdue", key);
+        if (r.sentTo.length) log({ taskId: t.id, title: t.title, to: r.sentTo, kind: "overdue", ok: true });
+        for (const f of r.failed) log({ taskId: t.id, title: t.title, to: [f.email], kind: "overdue", ok: false, error: f.error });
       }
     }
-    t.sent = t.sent.slice(-200);
+    t.sent = t.sent.slice(-400);
   }
 
   // Daily digest to the admin
