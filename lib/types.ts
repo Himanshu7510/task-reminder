@@ -43,9 +43,22 @@ export interface LogEntry {
   taskId?: string;
   title: string;
   to: string[];
-  kind: "reminder" | "overdue" | "manual" | "digest" | "test" | "assigned";
+  kind: "reminder" | "overdue" | "manual" | "digest" | "test" | "assigned" | "security";
   ok: boolean;
   error?: string;
+}
+
+export interface AuthState {
+  /** scrypt$N$r$p$salt$hash — when absent, ADMIN_PASSWORD env var is used */
+  hash?: string;
+  /** Bumped on every password change/reset: invalidates all existing sessions */
+  version: number;
+  changedAt?: string;
+  /** sha256 of the one-time reset token + expiry (ms) */
+  reset?: { hash: string; exp: number };
+  lastForgotAt?: number;
+  /** failed login attempts per client key (hashed IP) */
+  failures: Record<string, { n: number; first: number; until?: number }>;
 }
 
 export interface DB {
@@ -53,4 +66,5 @@ export interface DB {
   people: Person[];
   log: LogEntry[];
   lastRun?: string;
+  auth?: AuthState;
 }

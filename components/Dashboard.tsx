@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LogEntry, Person, Recurrence, Task } from "@/lib/types";
+import { PasswordField, strongEnough } from "./PasswordField";
 
 type TaskView = Task & { next: { date: string; overdue: boolean } | null; upcoming: string[] };
 interface Data {
@@ -554,7 +555,7 @@ function People({ data, reload, flash }: { data: Data; reload: () => void; flash
 
 /* ---------- Activity ---------- */
 function Activity({ log, lastRun }: { log: LogEntry[]; lastRun: string | null }) {
-  const kinds: Record<string, string> = { reminder: "Reminder", overdue: "Overdue", manual: "Sent manually", digest: "Daily digest", test: "Test", assigned: "Assigned" };
+  const kinds: Record<string, string> = { reminder: "Reminder", overdue: "Overdue", manual: "Sent manually", digest: "Daily digest", test: "Test", assigned: "Assigned", security: "Security" };
   return (
     <section className="panel">
       <p className="muted">Last automatic run: {lastRun ? new Date(lastRun).toLocaleString("en-IN") : "not yet"}</p>
@@ -568,7 +569,7 @@ function Activity({ log, lastRun }: { log: LogEntry[]; lastRun: string | null })
                 <td>{l.title}</td>
                 <td>{kinds[l.kind] || l.kind}</td>
                 <td>{l.to.join(", ")}</td>
-                <td>{l.ok ? <span className="ok">Sent</span> : <span className="bad-t" title={l.error}>Failed — {l.error?.slice(0, 80)}</span>}</td>
+                <td>{l.kind === "security" ? (l.ok ? <span className="ok">OK</span> : <span className="bad-t">{l.error}</span>) : l.ok ? <span className="ok">Sent</span> : <span className="bad-t" title={l.error}>Failed — {l.error?.slice(0, 80)}</span>}</td>
               </tr>
             ))}
             {!log.length && <tr><td colSpan={5} className="muted">No emails sent yet.</td></tr>}
@@ -576,6 +577,41 @@ function Activity({ log, lastRun }: { log: LogEntry[]; lastRun: string | null })
         </table>
       </div>
     </section>
+  );
+}
+
+/* ---------- Change password ---------- */
+function ChangePassword({ flash, adminEmail }: { flash: (m: string, b?: boolean) => void; adminEmail: string | null }) {
+  const [cur, setCur] = useState("");
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setErr("");
+    if (!strongEnough(pw)) return setErr("Please meet every password rule.");
+    if (pw !== pw2) return setErr("The new passwords don't match.");
+    setBusy(true);
+    const r = await fetch("/api/auth/change", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ current: cur, password: pw }) });
+    const j = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (r.ok) { setCur(""); setPw(""); setPw2(""); flash("Password changed — all other devices were signed out"); }
+    else setErr(j.error || "Couldn't change the password");
+  }
+  return (
+    <form className="card" onSubmit={save}>
+      <h3>Admin password</h3>
+      <p className="muted">Passwords are stored as a salted scrypt hash. Changing it signs out every other device{adminEmail ? `, and a security notice is emailed to ${adminEmail}` : ""}. Forgot it? Use “Forgot password?” on the sign-in page.</p>
+      <div className="pw-grid">
+        <PasswordField label="Current password" value={cur} onChange={setCur} autoComplete="current-password" />
+        <PasswordField label="New password" value={pw} onChange={setPw} autoComplete="new-password" showRules />
+        <PasswordField label="Confirm new password" value={pw2} onChange={setPw2} autoComplete="new-password" />
+      </div>
+      {pw2 && pw !== pw2 && <div className="hint-bad">Passwords don&apos;t match</div>}
+      {err && <div className="error">{err}</div>}
+      <button className="btn primary" style={{ marginTop: 14 }} disabled={busy || !cur || !strongEnough(pw) || pw !== pw2}>{busy ? "Saving…" : "Change password"}</button>
+    </form>
   );
 }
 
@@ -600,6 +636,7 @@ function Settings({ data, flash, reload }: { data: Data; flash: (m: string, b?: 
           <button className="btn primary" onClick={test} disabled={busy || !to}>Send test email</button>
         </div>
       </div>
+      <ChangePassword flash={flash} adminEmail={data.email.admin} />
       <div className="card">
         <h3>Schedule</h3>
         <p>Reminders are checked automatically <b>every day at 9:00 AM IST</b> ({data.tz}). Each item emails its assignees on each reminder day you picked (e.g. 30, 7 and 1 days before), and daily items email every day.</p>
